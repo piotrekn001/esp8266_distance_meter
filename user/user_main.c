@@ -1,6 +1,7 @@
 #include "esp_common.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "gpio.h"
 
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
@@ -57,7 +58,7 @@ user_tcp_discon_cb(void *arg)
     os_printf("tcp disconnect succeed !!! \r\n");
 }
 
-const char* REQUEST_HEADER = "GET /distance.php?mac=%s&cpuid=%s&distance=%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n";
+const char* REQUEST_HEADER = "GET /distance.php?mac=%x%x%x%x%x%x&cpuid=%x&distance=%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n";
 LOCAL void ICACHE_FLASH_ATTR
 
 user_sent_data(struct espconn *pespconn)
@@ -65,8 +66,14 @@ user_sent_data(struct espconn *pespconn)
 {
 
     char *pbuf = (char *)os_zalloc(1024);
+    uint8_t mac[6];
+    wifi_get_macaddr(STATION_IF, mac);
 
-    sprintf(pbuf, REQUEST_HEADER, "intive.com");
+    uint32_t chip_id = system_get_chip_id();
+
+    int distance = get_distance();
+
+    sprintf(pbuf, REQUEST_HEADER, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], chip_id, distance, "krzycho.wapp.pl");
 
     espconn_sent(pespconn, pbuf, strlen(pbuf));
 
@@ -210,7 +217,7 @@ void connect_task(void *pvParameters)
 
 
 
-  const char esp_tcp_server_ip[4] = {91,229,213,15};
+  const char esp_tcp_server_ip[4] = {83,169,35,176};
 
 
 
@@ -264,7 +271,7 @@ void connect_task(void *pvParameters)
 void user_init(void)
 {
   // init gpio sussytem
-  gpio_init();
+  //gpio_init();
 
   // configure UART TXD to be GPIO1, set as output
   PIN_FUNC_SELECT(PERIPHS_IO_MUX_MTDI_U, FUNC_GPIO12);
@@ -280,7 +287,7 @@ void user_init(void)
 
 	struct station_config apconfig;
 
-	memset(&apconfig, 0, sizeof(station_config));
+	memset(&apconfig, 0, sizeof(struct station_config));
 	memcpy(&apconfig.ssid, ssid, strlen(ssid));
 	memcpy(&apconfig.password, ssid_password, strlen(ssid_password));
 	

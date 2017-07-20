@@ -80,6 +80,7 @@ LINKFLAGS_eagle.app.v6 = \
 	-lssl	\
 	-lwpa	\
 	-lwps		\
+	-ldriver \
 	$(DEP_LIBS_eagle.app.v6)					\
 	-Wl,--end-group
 
