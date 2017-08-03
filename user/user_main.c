@@ -94,8 +94,10 @@ user_tcp_connect_cb(void *arg)
     espconn_regist_sentcb(pespconn, user_tcp_sent_cb);
 
     espconn_regist_disconcb(pespconn, user_tcp_discon_cb);
-
+    
     user_sent_data(pespconn);
+    
+    espconn_disconnect(pespconn);
 
 }
 
