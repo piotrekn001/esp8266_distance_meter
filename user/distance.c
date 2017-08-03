@@ -3,47 +3,40 @@
 #include "gpio.h"
 #include "os_type.h"
 
-
-static inline unsigned get_count(void)
-{
-  unsigned r;
-  asm volatile ("rsr %0, ccount" : "=r"(r));
-  return r;
+static inline unsigned get_count(void) {
+    unsigned r;
+    asm volatile ("rsr %0, ccount" : "=r"(r));
+    return r;
 }
 
-int get_distance()
-{
+int get_distance() {
 
-  GPIO_OUTPUT_SET(12, 1);  
-  volatile int pulse = get_count() + 800;  
-  while(pulse > get_count());
-  GPIO_OUTPUT_SET(12, 0);
+    GPIO_OUTPUT_SET(12, 1);
+    volatile int pulse = get_count() + 800;
+    while (pulse > get_count());
+    GPIO_OUTPUT_SET(12, 0);
 
-  int i = 10000;
-  
-  while (i-->0)
-  {	
-    if(GPIO_INPUT_GET(13))
-     {
-	break;
-     }
-  }
+    int i = 10000;
 
-  int start = get_count();
+    while (i-- > 0) {
+        if (GPIO_INPUT_GET(13)) {
+            break;
+        }
+    }
 
-  while (i-->0)
-  {
-     if(!GPIO_INPUT_GET(13))
-     {
-	break;
-     }
-  }
+    int start = get_count();
 
-  int stop = get_count();	
+    while (i-- > 0) {
+        if (!GPIO_INPUT_GET(13)) {
+            break;
+        }
+    }
 
-  int distance = ((stop-start)*34)/1600;
-  return distance;
-  //os_printf("distance %d\n", distance);
+    int stop = get_count();
+
+    int distance = ((stop - start)*34) / 1600;
+    return distance;
+    //os_printf("distance %d\n", distance);
 
 }
 
