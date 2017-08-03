@@ -1,4 +1,5 @@
 #include "esp_common.h"
+#include "espconn.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "gpio.h"
@@ -16,6 +17,8 @@ LOCAL os_timer_t test_timer;
 LOCAL struct espconn user_tcp_conn;
 LOCAL struct _esp_tcp user_tcp;
 ip_addr_t tcp_server_ip;
+
+#define NET_DOMAIN "krzycho.wapp.pl"
 
 /******************************************************************************
  * FunctionName : user_tcp_recv_cb
@@ -61,8 +64,7 @@ const char* REQUEST_HEADER = "GET /distance.php?mac=%x%x%x%x%x%x&cpuid=%x&distan
 
 LOCAL void ICACHE_FLASH_ATTR
 
-user_sent_data(struct espconn *pespconn)
- {
+user_sent_data(struct espconn *pespconn) {
 
     char *pbuf = (char *) os_zalloc(1024);
     uint8_t mac[6];
@@ -72,7 +74,7 @@ user_sent_data(struct espconn *pespconn)
 
     int distance = get_distance();
 
-    sprintf(pbuf, REQUEST_HEADER, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], chip_id, distance, "krzycho.wapp.pl");
+    sprintf(pbuf, REQUEST_HEADER, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], chip_id, distance, NET_DOMAIN);
 
     espconn_sent(pespconn, pbuf, strlen(pbuf));
 
@@ -82,8 +84,7 @@ user_sent_data(struct espconn *pespconn)
 
 LOCAL void ICACHE_FLASH_ATTR
 
-user_tcp_connect_cb(void *arg)
- {
+user_tcp_connect_cb(void *arg) {
 
     struct espconn *pespconn = arg;
 
@@ -130,6 +131,36 @@ uint32 user_rf_cal_sector_set(void) {
     return rf_cal_sec;
 }
 
+LOCAL void ICACHE_FLASH_ATTR
+user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg) {
+    struct espconn *pespconn = (struct espconn *) arg;
+
+    if (ipaddr == NULL) {
+        os_printf("user_dns_found NULL \r\n");
+        return;
+    }
+
+    //dns got ip
+    os_printf("user_dns_found %d.%d.%d.%d \r\n",
+            *((uint8 *) & ipaddr->addr), *((uint8 *) & ipaddr->addr + 1),
+            *((uint8 *) & ipaddr->addr + 2), *((uint8 *) & ipaddr->addr + 3));
+
+    if (tcp_server_ip.addr == 0 && ipaddr->addr != 0) {
+        // dns succeed, create tcp connection
+        tcp_server_ip.addr = ipaddr->addr;
+        memcpy(user_tcp_conn.proto.tcp->remote_ip, &ipaddr->addr, 4); // remote ip of tcp server which get by dns
+        
+        user_tcp_conn.proto.tcp->remote_port = 80;
+        user_tcp_conn.proto.tcp->local_port = espconn_port();
+
+        printf("connect cb!\n");
+        espconn_regist_connectcb(&user_tcp_conn, user_tcp_connect_cb);
+
+        printf("connect!\n");
+        espconn_connect(&user_tcp_conn);
+    }
+}
+
 void connect_task(void *pvParameters) {
     printf("connect task start\n");
 
@@ -144,18 +175,7 @@ void connect_task(void *pvParameters) {
             user_tcp_conn.type = ESPCONN_TCP;
             user_tcp_conn.state = ESPCONN_NONE;
 
-
-            const char esp_tcp_server_ip[4] = {83, 169, 35, 176};
-
-            memcpy(user_tcp_conn.proto.tcp->remote_ip, esp_tcp_server_ip, 4);
-            user_tcp_conn.proto.tcp->remote_port = 80;
-            user_tcp_conn.proto.tcp->local_port = espconn_port();
-
-            printf("connect cb!\n");
-            espconn_regist_connectcb(&user_tcp_conn, user_tcp_connect_cb);
-
-            printf("connect!\n");
-            espconn_connect(&user_tcp_conn);
+            espconn_gethostbyname(&user_tcp_conn, NET_DOMAIN, &tcp_server_ip, user_dns_found); // DNS function
 
             inited = 1;
 
@@ -165,7 +185,6 @@ void connect_task(void *pvParameters) {
     }
 
     vTaskDelete(NULL);
-
 }
 
 void user_init(void) {
