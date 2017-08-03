@@ -206,6 +206,8 @@ void user_init(void) {
     memcpy(&apconfig.ssid, ssid, strlen(ssid));
     memcpy(&apconfig.password, ssid_password, strlen(ssid_password));
 
+    espconn_init();
+    
     wifi_station_set_config(&apconfig);
 
     wifi_station_set_auto_connect(TRUE);
