@@ -18,6 +18,8 @@ LOCAL struct espconn user_tcp_conn;
 LOCAL struct _esp_tcp user_tcp;
 ip_addr_t tcp_server_ip;
 
+int connection_active = 0;
+
 #define NET_DOMAIN "krzycho.wapp.pl"
 
 /******************************************************************************
@@ -58,6 +60,7 @@ user_tcp_discon_cb(void *arg) {
     //tcp disconnect successfully
 
     os_printf("tcp disconnect succeed !!! \r\n");
+    connection_active = 0;
 }
 
 const char* REQUEST_HEADER = "GET /distance.php?mac=%x%x%x%x%x%x&cpuid=%x&distance=%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n";
@@ -132,6 +135,22 @@ uint32 user_rf_cal_sector_set(void) {
 }
 
 LOCAL void ICACHE_FLASH_ATTR
+start_connection(ip_addr_t *ipaddr, struct espconn *pespconn) {
+    tcp_server_ip.addr = ipaddr->addr;
+    memcpy(user_tcp_conn.proto.tcp->remote_ip, &ipaddr->addr, 4); // remote ip of tcp server which get by dns
+        
+    user_tcp_conn.proto.tcp->remote_port = 80;
+    user_tcp_conn.proto.tcp->local_port = espconn_port();
+
+    printf("connect cb!\n");
+    espconn_regist_connectcb(&user_tcp_conn, user_tcp_connect_cb);
+
+    printf("connect!\n");
+    espconn_connect(&user_tcp_conn);
+}
+
+
+LOCAL void ICACHE_FLASH_ATTR
 user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg) {
     struct espconn *pespconn = (struct espconn *) arg;
 
@@ -147,17 +166,7 @@ user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg) {
 
     if (tcp_server_ip.addr == 0 && ipaddr->addr != 0) {
         // dns succeed, create tcp connection
-        tcp_server_ip.addr = ipaddr->addr;
-        memcpy(user_tcp_conn.proto.tcp->remote_ip, &ipaddr->addr, 4); // remote ip of tcp server which get by dns
-        
-        user_tcp_conn.proto.tcp->remote_port = 80;
-        user_tcp_conn.proto.tcp->local_port = espconn_port();
-
-        printf("connect cb!\n");
-        espconn_regist_connectcb(&user_tcp_conn, user_tcp_connect_cb);
-
-        printf("connect!\n");
-        espconn_connect(&user_tcp_conn);
+        start_connection(ipaddr, pespconn);
     }
 }
 
@@ -166,20 +175,23 @@ void connect_task(void *pvParameters) {
 
     for (;;) {
         printf("connect task\n");
-        int inited = 0;
-
-        if (inited == 0 && wifi_station_get_connect_status() == STATION_GOT_IP) {
+        if (connection_active == 0 && wifi_station_get_connect_status() == STATION_GOT_IP) {
             printf("GOT IP!\n");
 
             user_tcp_conn.proto.tcp = &user_tcp;
             user_tcp_conn.type = ESPCONN_TCP;
             user_tcp_conn.state = ESPCONN_NONE;
 
-            espconn_gethostbyname(&user_tcp_conn, NET_DOMAIN, &tcp_server_ip, user_dns_found); // DNS function
+            int res = espconn_gethostbyname(&user_tcp_conn, NET_DOMAIN, &tcp_server_ip, user_dns_found);
+            
+            if(res == ESPCONN_OK) {
+                start_connection(&tcp_server_ip, &user_tcp_conn);
+            } else if(res == ESPCONN_INPROGRESS) {
+                // wait for callback user_dns_found
+            }
+            connection_active = 1;
 
-            inited = 1;
-
-            vTaskDelete(NULL);
+            //vTaskDelete(NULL);
         }
         vTaskDelay(500);
     }
