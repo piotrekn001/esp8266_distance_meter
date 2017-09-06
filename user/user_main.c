@@ -18,6 +18,8 @@ LOCAL struct espconn user_tcp_conn;
 LOCAL struct _esp_tcp user_tcp;
 ip_addr_t tcp_server_ip;
 
+int socket_in_use = 0;
+
 #define NET_DOMAIN "krzycho.wapp.pl"
 
 /******************************************************************************
@@ -58,6 +60,10 @@ user_tcp_discon_cb(void *arg) {
     //tcp disconnect successfully
 
     os_printf("tcp disconnect succeed !!! \r\n");
+    
+    socket_in_use = 0;
+    
+    espconn_disconnect(&user_tcp_conn);
 }
 
 const char* REQUEST_HEADER = "GET /distance.php?mac=%x%x%x%x%x%x&cpuid=%x&distance=%d HTTP/1.1\r\nHost: %s\r\nConnection: close\r\n\r\n";
@@ -133,10 +139,12 @@ uint32 user_rf_cal_sector_set(void) {
 
 LOCAL void ICACHE_FLASH_ATTR
 user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg) {
+    printf("user_dns_found\n");
     struct espconn *pespconn = (struct espconn *) arg;
 
     if (ipaddr == NULL) {
         os_printf("user_dns_found NULL \r\n");
+        socket_in_use = 0;
         return;
     }
 
@@ -145,7 +153,8 @@ user_dns_found(const char *name, ip_addr_t *ipaddr, void *arg) {
             *((uint8 *) & ipaddr->addr), *((uint8 *) & ipaddr->addr + 1),
             *((uint8 *) & ipaddr->addr + 2), *((uint8 *) & ipaddr->addr + 3));
 
-    if (tcp_server_ip.addr == 0 && ipaddr->addr != 0) {
+    //tcp_server_ip.addr == 0 && 
+    if (ipaddr->addr != 0) {
         // dns succeed, create tcp connection
         tcp_server_ip.addr = ipaddr->addr;
         memcpy(user_tcp_conn.proto.tcp->remote_ip, &ipaddr->addr, 4); // remote ip of tcp server which get by dns
@@ -166,20 +175,29 @@ void connect_task(void *pvParameters) {
 
     for (;;) {
         printf("connect task\n");
-        int inited = 0;
-
-        if (inited == 0 && wifi_station_get_connect_status() == STATION_GOT_IP) {
+//socket_in_use == 0 && 
+        if (wifi_station_get_connect_status() == STATION_GOT_IP) {
             printf("GOT IP!\n");
 
+  //          memset(&user_tcp_conn, 0, sizeof(struct espconn));
             user_tcp_conn.proto.tcp = &user_tcp;
             user_tcp_conn.type = ESPCONN_TCP;
             user_tcp_conn.state = ESPCONN_NONE;
 
-            espconn_gethostbyname(&user_tcp_conn, NET_DOMAIN, &tcp_server_ip, user_dns_found); // DNS function
+            printf("%d\n", tcp_server_ip.addr);
+//            memset(&tcp_server_ip, 0, sizeof(struct ip_addr));
+            
+            printf("%d %d\n", sizeof(struct espconn), sizeof(struct ip_addr));
+            printf("%d\n", tcp_server_ip.addr);
+            int status = espconn_gethostbyname(&user_tcp_conn, NET_DOMAIN, &tcp_server_ip, user_dns_found); // DNS function
+            if(status == 0) {
+                user_dns_found("", &tcp_server_ip, &user_tcp_conn);
+            }
+            printf("status: %d\n", status);
 
-            inited = 1;
+            socket_in_use = 1;
 
-            vTaskDelete(NULL);
+            //vTaskDelete(NULL);
         }
         vTaskDelay(500);
     }
